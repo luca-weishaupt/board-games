@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Board Game Spinner</title>
+    <title>Weiscrack Game Selector</title>
     <!-- Google Font for a polished look -->
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet" />
     <style>
@@ -106,7 +106,7 @@
             border-radius: 50%;
         }
 
-        /* Pointer Arrow: Placed at the top and now pointing down */
+        /* Pointer Arrow: Placed at the top and pointing down */
         #pointer {
             position: absolute;
             top: -10px;
@@ -116,7 +116,6 @@
             height: 0;
             border-left: 20px solid transparent;
             border-right: 20px solid transparent;
-            /* Use border-top instead of border-bottom to make a downward-pointing arrow */
             border-top: 30px solid #e74c3c;
             z-index: 10;
         }
@@ -146,7 +145,7 @@
 </head>
 
 <body>
-    <h1>Board Game Spinner</h1>
+    <h1>Weiscrack Game Selector</h1>
     <div class="container">
         <!-- Filter Panel -->
         <div class="filters">
@@ -172,7 +171,7 @@
             </div>
         </div>
 
-        <!-- Result and Message Display (above the wheel) -->
+        <!-- Result and Message Display (placed above the wheel) -->
         <div id="result"></div>
         <div id="message"></div>
 
@@ -200,7 +199,7 @@
         let filteredGames = [];  // Games after filtering.
         let currentRotation = 0; // Current rotation (in degrees) of the wheel.
 
-        // Google Sheet CSV export URL (ensure your sheet is published & public)
+        // CSV URL (make sure your sheet is published & public)
         const csvUrl = "https://docs.google.com/spreadsheets/d/18piddPn0CGbuT0Ntwvf3XbPwRpAj-WyeyIM0abiS9-M/export?format=csv";
 
         // Grab UI elements.
@@ -208,7 +207,7 @@
         const messageEl = document.getElementById("message");
         const resultEl = document.getElementById("result");
 
-        // Set up live filtering for each filter input.
+        // Set up live filtering.
         const filterIds = ["numPlayers", "maxTime", "minAge", "difficultyMin", "difficultyMax"];
         filterIds.forEach(id => {
             document.getElementById(id).addEventListener("input", applyFilters);
@@ -231,7 +230,6 @@
                         difficulty: Number(row["Difficulty"]),
                         sortBy: row["Sort By"] || ""
                     }));
-                // Initially, no filters applied: use all games.
                 filteredGames = masterGames.slice();
                 updateWheel();
                 spinButton.disabled = filteredGames.length === 0;
@@ -280,7 +278,9 @@
             const radius = center - 10;
             ctx.clearRect(0, 0, size, size);
 
-            // Draw a neutral circle if there are no games.
+            // Define an offset so that 0 radians corresponds to the top (-90°).
+            const offset = -Math.PI / 2;
+
             if (filteredGames.length === 0) {
                 ctx.fillStyle = "#ccc";
                 ctx.beginPath();
@@ -295,30 +295,31 @@
             }
 
             const numSlices = filteredGames.length;
-            const sliceAngle = 2 * Math.PI / numSlices;
+            const sliceAngle = (2 * Math.PI) / numSlices;
 
             for (let i = 0; i < numSlices; i++) {
-                const startAngle = i * sliceAngle;
+                const startAngle = offset + i * sliceAngle;
                 const endAngle = startAngle + sliceAngle;
-
                 // Draw the slice.
-                ctx.fillStyle = `hsl(${i * 360 / numSlices}, 70%, 70%)`;
+                ctx.fillStyle = `hsl(${(i * 360) / numSlices}, 70%, 70%)`;
                 ctx.beginPath();
                 ctx.moveTo(center, center);
                 ctx.arc(center, center, radius, startAngle, endAngle);
                 ctx.closePath();
                 ctx.fill();
 
-                // Draw slice border.
+                // Slice border.
                 ctx.strokeStyle = "#fff";
                 ctx.lineWidth = 2;
                 ctx.stroke();
 
-                // Draw the game name horizontally.
+                // Draw the game name.
                 const gameName = filteredGames[i].Name;
-                // Choose a point along the radius (with padding) for the text.
+                // Choose a radius for text placement.
                 const textRadius = radius - 40;
+                // The midpoint of the slice.
                 const midAngle = startAngle + sliceAngle / 2;
+                // Compute coordinates.
                 const x = center + textRadius * Math.cos(midAngle);
                 const y = center + textRadius * Math.sin(midAngle);
 
@@ -326,7 +327,7 @@
                 ctx.textBaseline = "middle";
                 let fontSize = 20;
                 ctx.font = `bold ${fontSize}px sans-serif`;
-                // Estimate the maximum width available along the chord of the slice.
+                // Maximum chord length at this radius.
                 const maxTextWidth = 2 * textRadius * Math.sin(sliceAngle / 2);
                 let textWidth = ctx.measureText(gameName).width;
                 if (textWidth > maxTextWidth) {
@@ -348,15 +349,16 @@
 
             const numSlices = filteredGames.length;
             const sliceAngleDeg = 360 / numSlices;
-
-            // Randomly pick a winning slice.
+            // Pick a random winning slice.
             const winningIndex = Math.floor(Math.random() * numSlices);
-            // For the pointer at the top, align the winning slice’s center with 270° (top of circle).
-            const winningSegmentCenter = winningIndex * sliceAngleDeg + sliceAngleDeg / 2;
-            let extraRotation = 270 - winningSegmentCenter;
-            extraRotation = ((extraRotation % 360) + 360) % 360;
-
-            // Add several full spins for dramatic effect.
+            // The drawn center for slice i is at: -90° + (i + 0.5) * sliceAngleDeg.
+            // The wheel's current effective rotation is 'currentRotation'.
+            // We want the winning slice’s center (i.e. -90 + (winningIndex+0.5)*sliceAngleDeg + currentRotation)
+            // to equal -90°.
+            // Solve: currentRotation + (winningIndex+0.5)*sliceAngleDeg + delta = 0  (mod 360)
+            // i.e., delta = - (currentRotation + (winningIndex+0.5)*sliceAngleDeg) (mod 360)
+            const winningCenter = (winningIndex + 0.5) * sliceAngleDeg;
+            const extraRotation = ((- (currentRotation + winningCenter)) % 360 + 360) % 360;
             const spins = 5;
             const targetRotation = currentRotation + spins * 360 + extraRotation;
 
