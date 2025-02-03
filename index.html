@@ -83,7 +83,7 @@
             transform: none;
         }
 
-        /* Wheel Styles */
+        /* Wheel Container and Canvas */
         .wheel-wrapper {
             position: relative;
             margin: 0 auto;
@@ -92,8 +92,10 @@
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
             border-radius: 50%;
             background: #fff;
+            overflow: hidden;
         }
 
+        /* The container we'll rotate (it wraps the canvas) */
         #wheelContainer {
             width: 100%;
             height: 100%;
@@ -101,6 +103,7 @@
         }
 
         canvas {
+            display: block;
             width: 100%;
             height: 100%;
             border-radius: 50%;
@@ -177,7 +180,7 @@
 
         <!-- Wheel Display -->
         <div class="wheel-wrapper">
-            <!-- The container we rotate -->
+            <!-- The container that will be rotated -->
             <div id="wheelContainer">
                 <canvas id="wheelCanvas" width="400" height="400"></canvas>
             </div>
@@ -197,21 +200,24 @@
         /*************** Global Variables ***************/
         let masterGames = [];    // All games from the sheet.
         let filteredGames = [];  // Games after filtering.
-        let currentRotation = 0; // Current rotation (in degrees) of the wheel.
-
-        // CSV URL (make sure your sheet is published & public)
-        const csvUrl = "https://docs.google.com/spreadsheets/d/18piddPn0CGbuT0Ntwvf3XbPwRpAj-WyeyIM0abiS9-M/export?format=csv";
+        let currentRotation = 0; // In degrees; applied to the entire wheel.
 
         // Grab UI elements.
         const spinButton = document.getElementById("spinButton");
         const messageEl = document.getElementById("message");
         const resultEl = document.getElementById("result");
+        const wheelContainer = document.getElementById("wheelContainer");
+        const canvas = document.getElementById("wheelCanvas");
+        const ctx = canvas.getContext("2d");
 
         // Set up live filtering.
         const filterIds = ["numPlayers", "maxTime", "minAge", "difficultyMin", "difficultyMax"];
         filterIds.forEach(id => {
             document.getElementById(id).addEventListener("input", applyFilters);
         });
+
+        // CSV URL (ensure your sheet is published & public)
+        const csvUrl = "https://docs.google.com/spreadsheets/d/18piddPn0CGbuT0Ntwvf3XbPwRpAj-WyeyIM0abiS9-M/export?format=csv";
 
         /*************** Data Loading ***************/
         Papa.parse(csvUrl, {
@@ -271,14 +277,12 @@
 
         /*************** Wheel Drawing ***************/
         function updateWheel() {
-            const canvas = document.getElementById("wheelCanvas");
-            const ctx = canvas.getContext("2d");
             const size = canvas.width;
             const center = size / 2;
             const radius = center - 10;
             ctx.clearRect(0, 0, size, size);
 
-            // Define an offset so that 0 radians corresponds to the top (-90°).
+            // Define an offset so that 0 radians is at the top.
             const offset = -Math.PI / 2;
 
             if (filteredGames.length === 0) {
@@ -286,21 +290,16 @@
                 ctx.beginPath();
                 ctx.arc(center, center, radius, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.fillStyle = "#333";
-                ctx.font = "bold 20px sans-serif";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillText("No Games", center, center);
                 return;
             }
 
             const numSlices = filteredGames.length;
             const sliceAngle = (2 * Math.PI) / numSlices;
 
+            // Draw each slice.
             for (let i = 0; i < numSlices; i++) {
                 const startAngle = offset + i * sliceAngle;
                 const endAngle = startAngle + sliceAngle;
-                // Draw the slice.
                 ctx.fillStyle = `hsl(${(i * 360) / numSlices}, 70%, 70%)`;
                 ctx.beginPath();
                 ctx.moveTo(center, center);
@@ -315,27 +314,35 @@
 
                 // Draw the game name.
                 const gameName = filteredGames[i].Name;
-                // Choose a radius for text placement.
-                const textRadius = radius - 40;
-                // The midpoint of the slice.
-                const midAngle = startAngle + sliceAngle / 2;
-                // Compute coordinates.
-                const x = center + textRadius * Math.cos(midAngle);
-                const y = center + textRadius * Math.sin(midAngle);
+                // The midpoint angle of the slice.
+                let midAngle = startAngle + sliceAngle / 2;
+                let midDeg = (midAngle * 180 / Math.PI + 360) % 360;
 
-                ctx.textAlign = "center";
+                ctx.save();
+                ctx.translate(center, center);
+                ctx.rotate(midAngle);
+                // If text would be upside down, rotate it 180°.
+                if (midDeg > 90 && midDeg < 270) {
+                    ctx.rotate(Math.PI);
+                    ctx.textAlign = "left";
+                } else {
+                    ctx.textAlign = "right";
+                }
                 ctx.textBaseline = "middle";
-                let fontSize = 20;
+                // Base font size increased by 30% (from 20px to ~26px)
+                let fontSize = 35;
                 ctx.font = `bold ${fontSize}px sans-serif`;
-                // Maximum chord length at this radius.
-                const maxTextWidth = 2 * textRadius * Math.sin(sliceAngle / 2);
+                const textRadius = radius - 10;
+                const maxTextWidth = 2 * textRadius * Math.sin(sliceAngle / 1.3);
                 let textWidth = ctx.measureText(gameName).width;
                 if (textWidth > maxTextWidth) {
                     fontSize = Math.floor(fontSize * (maxTextWidth / textWidth));
                     ctx.font = `bold ${fontSize}px sans-serif`;
                 }
                 ctx.fillStyle = "#333";
-                ctx.fillText(gameName, x, y);
+                let xPos = (ctx.textAlign === "right") ? textRadius : -textRadius;
+                ctx.fillText(gameName, xPos, 0);
+                ctx.restore();
             }
         }
 
@@ -349,20 +356,14 @@
 
             const numSlices = filteredGames.length;
             const sliceAngleDeg = 360 / numSlices;
-            // Pick a random winning slice.
+            // Choose a random winning slice.
             const winningIndex = Math.floor(Math.random() * numSlices);
-            // The drawn center for slice i is at: -90° + (i + 0.5) * sliceAngleDeg.
-            // The wheel's current effective rotation is 'currentRotation'.
-            // We want the winning slice’s center (i.e. -90 + (winningIndex+0.5)*sliceAngleDeg + currentRotation)
-            // to equal -90°.
-            // Solve: currentRotation + (winningIndex+0.5)*sliceAngleDeg + delta = 0  (mod 360)
-            // i.e., delta = - (currentRotation + (winningIndex+0.5)*sliceAngleDeg) (mod 360)
-            const winningCenter = (winningIndex + 0.5) * sliceAngleDeg;
-            const extraRotation = ((- (currentRotation + winningCenter)) % 360 + 360) % 360;
+            const winningCenter = -90 + (winningIndex + 0.5) * sliceAngleDeg;
+            let extraRotation = (-90 - (currentRotation + winningCenter)) % 360;
+            extraRotation = ((extraRotation % 360) + 360) % 360;
             const spins = 5;
             const targetRotation = currentRotation + spins * 360 + extraRotation;
 
-            const wheelContainer = document.getElementById("wheelContainer");
             wheelContainer.style.transition = "transform 5s cubic-bezier(0.33, 1, 0.68, 1)";
             wheelContainer.style.transform = `rotate(${targetRotation}deg)`;
 
@@ -370,8 +371,9 @@
                 wheelContainer.style.transition = "none";
                 currentRotation = targetRotation % 360;
                 wheelContainer.style.transform = `rotate(${currentRotation}deg)`;
+                updateWheel();
                 const winningGame = filteredGames[winningIndex];
-                resultEl.textContent = "Try playing: " + winningGame.Name;
+                resultEl.textContent = "Selected game: " + winningGame.Name;
                 spinButton.disabled = false;
                 wheelContainer.removeEventListener("transitionend", handler);
             });
