@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Board Game Spinner</title>
+    <!-- Google Font for a polished look -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet" />
+    <style>
+        /* Global Styles */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #fdfbfb, #ebedee);
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        h1 {
+            margin-top: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            padding: 20px;
+        }
+
+        /* Filters panel arranged as a grid */
+        .filters {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .filter-group label {
+            margin-bottom: 5px;
+            font-weight: 600;
+        }
+
+        .filter-group input {
+            padding: 6px 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        /* Spin Button */
+        button {
+            padding: 8px 16px;
+            border: none;
+            background: #0077cc;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s, transform 0.2s ease-out;
+        }
+
+        button:hover {
+            background: #005fa3;
+            transform: scale(1.05);
+        }
+
+        button:disabled {
+            background: #aaa;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Wheel Styles */
+        .wheel-wrapper {
+            position: relative;
+            margin: 0 auto;
+            width: 400px;
+            height: 400px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+            border-radius: 50%;
+            background: #fff;
+        }
+
+        #wheelContainer {
+            width: 100%;
+            height: 100%;
+            transition: transform 5s cubic-bezier(0.33, 1, 0.68, 1);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+        }
+
+        /* Pointer Arrow: Placed at the top and now pointing down */
+        #pointer {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            /* Use border-top instead of border-bottom to make a downward-pointing arrow */
+            border-top: 30px solid #e74c3c;
+            z-index: 10;
+        }
+
+        /* Result and Message Display (placed above the wheel) */
+        #result {
+            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        #message {
+            text-align: center;
+            font-size: 16px;
+            color: #e74c3c;
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 480px) {
+            .wheel-wrapper {
+                width: 300px;
+                height: 300px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Board Game Spinner</h1>
+    <div class="container">
+        <!-- Filter Panel -->
+        <div class="filters">
+            <div class="filter-group">
+                <label for="numPlayers"># of Players</label>
+                <input type="number" id="numPlayers" placeholder="e.g., 4" min="1" />
+            </div>
+            <div class="filter-group">
+                <label for="maxTime">Max Time (minutes)</label>
+                <input type="number" id="maxTime" placeholder="e.g., 45" min="1" />
+            </div>
+            <div class="filter-group">
+                <label for="minAge">Youngest Age</label>
+                <input type="number" id="minAge" placeholder="e.g., 8" min="1" />
+            </div>
+            <div class="filter-group">
+                <label for="difficultyMin">Min Difficulty</label>
+                <input type="number" id="difficultyMin" placeholder="e.g., 1" min="1" />
+            </div>
+            <div class="filter-group">
+                <label for="difficultyMax">Max Difficulty</label>
+                <input type="number" id="difficultyMax" placeholder="e.g., 5" min="1" />
+            </div>
+        </div>
+
+        <!-- Result and Message Display (above the wheel) -->
+        <div id="result"></div>
+        <div id="message"></div>
+
+        <!-- Wheel Display -->
+        <div class="wheel-wrapper">
+            <!-- The container we rotate -->
+            <div id="wheelContainer">
+                <canvas id="wheelCanvas" width="400" height="400"></canvas>
+            </div>
+            <!-- The pointer arrow -->
+            <div id="pointer"></div>
+        </div>
+
+        <!-- Spin Button -->
+        <div style="text-align: center; margin-top: 20px;">
+            <button id="spinButton" disabled>Spin!</button>
+        </div>
+    </div>
+
+    <!-- PapaParse (for CSV parsing) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <script>
+        /*************** Global Variables ***************/
+        let masterGames = [];    // All games from the sheet.
+        let filteredGames = [];  // Games after filtering.
+        let currentRotation = 0; // Current rotation (in degrees) of the wheel.
+
+        // Google Sheet CSV export URL (ensure your sheet is published & public)
+        const csvUrl = "https://docs.google.com/spreadsheets/d/18piddPn0CGbuT0Ntwvf3XbPwRpAj-WyeyIM0abiS9-M/export?format=csv";
+
+        // Grab UI elements.
+        const spinButton = document.getElementById("spinButton");
+        const messageEl = document.getElementById("message");
+        const resultEl = document.getElementById("result");
+
+        // Set up live filtering for each filter input.
+        const filterIds = ["numPlayers", "maxTime", "minAge", "difficultyMin", "difficultyMax"];
+        filterIds.forEach(id => {
+            document.getElementById(id).addEventListener("input", applyFilters);
+        });
+
+        /*************** Data Loading ***************/
+        Papa.parse(csvUrl, {
+            download: true,
+            header: true,
+            complete: function (results) {
+                masterGames = results.data
+                    .filter(row => row["Name"] && row["Name"].trim() !== "")
+                    .map(row => ({
+                        Name: row["Name"],
+                        minPlayers: Number(row["Min Players"]),
+                        maxPlayers: Number(row["Max Players"]),
+                        minTime: Number(row["Min Time"]),
+                        maxTime: Number(row["Max Time"]),
+                        minAge: Number(row["Min Age"]),
+                        difficulty: Number(row["Difficulty"]),
+                        sortBy: row["Sort By"] || ""
+                    }));
+                // Initially, no filters applied: use all games.
+                filteredGames = masterGames.slice();
+                updateWheel();
+                spinButton.disabled = filteredGames.length === 0;
+                messageEl.textContent = "";
+            },
+            error: function (err) {
+                messageEl.textContent = "Error loading data.";
+                console.error(err);
+            }
+        });
+
+        /*************** Filtering ***************/
+        function applyFilters() {
+            const numPlayers = parseInt(document.getElementById("numPlayers").value);
+            const maxTime = parseInt(document.getElementById("maxTime").value);
+            const minAge = parseInt(document.getElementById("minAge").value);
+            const difficultyMin = parseInt(document.getElementById("difficultyMin").value);
+            const difficultyMax = parseInt(document.getElementById("difficultyMax").value);
+
+            filteredGames = masterGames.filter(game => {
+                if (!isNaN(numPlayers) && (numPlayers < game.minPlayers || numPlayers > game.maxPlayers)) return false;
+                if (!isNaN(maxTime) && (game.maxTime > maxTime)) return false;
+                if (!isNaN(minAge) && (minAge < game.minAge)) return false;
+                if (!isNaN(difficultyMin) && (game.difficulty < difficultyMin)) return false;
+                if (!isNaN(difficultyMax) && (game.difficulty > difficultyMax)) return false;
+                return true;
+            });
+
+            if (filteredGames.length === 0) {
+                messageEl.textContent = "No games match the filters.";
+                spinButton.disabled = true;
+            } else {
+                messageEl.textContent = "";
+                spinButton.disabled = false;
+            }
+            resultEl.textContent = "";
+            updateWheel();
+        }
+
+        /*************** Wheel Drawing ***************/
+        function updateWheel() {
+            const canvas = document.getElementById("wheelCanvas");
+            const ctx = canvas.getContext("2d");
+            const size = canvas.width;
+            const center = size / 2;
+            const radius = center - 10;
+            ctx.clearRect(0, 0, size, size);
+
+            // Draw a neutral circle if there are no games.
+            if (filteredGames.length === 0) {
+                ctx.fillStyle = "#ccc";
+                ctx.beginPath();
+                ctx.arc(center, center, radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = "#333";
+                ctx.font = "bold 20px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("No Games", center, center);
+                return;
+            }
+
+            const numSlices = filteredGames.length;
+            const sliceAngle = 2 * Math.PI / numSlices;
+
+            for (let i = 0; i < numSlices; i++) {
+                const startAngle = i * sliceAngle;
+                const endAngle = startAngle + sliceAngle;
+
+                // Draw the slice.
+                ctx.fillStyle = `hsl(${i * 360 / numSlices}, 70%, 70%)`;
+                ctx.beginPath();
+                ctx.moveTo(center, center);
+                ctx.arc(center, center, radius, startAngle, endAngle);
+                ctx.closePath();
+                ctx.fill();
+
+                // Draw slice border.
+                ctx.strokeStyle = "#fff";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Draw the game name horizontally.
+                const gameName = filteredGames[i].Name;
+                // Choose a point along the radius (with padding) for the text.
+                const textRadius = radius - 40;
+                const midAngle = startAngle + sliceAngle / 2;
+                const x = center + textRadius * Math.cos(midAngle);
+                const y = center + textRadius * Math.sin(midAngle);
+
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                let fontSize = 20;
+                ctx.font = `bold ${fontSize}px sans-serif`;
+                // Estimate the maximum width available along the chord of the slice.
+                const maxTextWidth = 2 * textRadius * Math.sin(sliceAngle / 2);
+                let textWidth = ctx.measureText(gameName).width;
+                if (textWidth > maxTextWidth) {
+                    fontSize = Math.floor(fontSize * (maxTextWidth / textWidth));
+                    ctx.font = `bold ${fontSize}px sans-serif`;
+                }
+                ctx.fillStyle = "#333";
+                ctx.fillText(gameName, x, y);
+            }
+        }
+
+        /*************** Spin Animation ***************/
+        spinButton.addEventListener("click", function () {
+            if (filteredGames.length === 0) return;
+
+            spinButton.disabled = true;
+            resultEl.textContent = "";
+            messageEl.textContent = "";
+
+            const numSlices = filteredGames.length;
+            const sliceAngleDeg = 360 / numSlices;
+
+            // Randomly pick a winning slice.
+            const winningIndex = Math.floor(Math.random() * numSlices);
+            // For the pointer at the top, align the winning slice’s center with 270° (top of circle).
+            const winningSegmentCenter = winningIndex * sliceAngleDeg + sliceAngleDeg / 2;
+            let extraRotation = 270 - winningSegmentCenter;
+            extraRotation = ((extraRotation % 360) + 360) % 360;
+
+            // Add several full spins for dramatic effect.
+            const spins = 5;
+            const targetRotation = currentRotation + spins * 360 + extraRotation;
+
+            const wheelContainer = document.getElementById("wheelContainer");
+            wheelContainer.style.transition = "transform 5s cubic-bezier(0.33, 1, 0.68, 1)";
+            wheelContainer.style.transform = `rotate(${targetRotation}deg)`;
+
+            wheelContainer.addEventListener("transitionend", function handler() {
+                wheelContainer.style.transition = "none";
+                currentRotation = targetRotation % 360;
+                wheelContainer.style.transform = `rotate(${currentRotation}deg)`;
+                const winningGame = filteredGames[winningIndex];
+                resultEl.textContent = "Try playing: " + winningGame.Name;
+                spinButton.disabled = false;
+                wheelContainer.removeEventListener("transitionend", handler);
+            });
+        });
+    </script>
+</body>
+
+</html>
